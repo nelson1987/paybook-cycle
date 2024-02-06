@@ -15,6 +15,7 @@ namespace Paybook.Cycle.Core
 
         public string? Summary { get; set; }
     }
+
     public interface IEntity
     {
         [BsonId]
@@ -23,6 +24,7 @@ namespace Paybook.Cycle.Core
 
         DateTime CreatedAt { get; }
     }
+
     public abstract class Document : IEntity
     {
         public ObjectId Id { get; set; }
@@ -46,7 +48,8 @@ namespace Paybook.Cycle.Core
     {
         public string FirstName { get; set; }
     }
-    public interface IMongoRepository<TDocument> where TDocument : IEntity 
+
+    public interface IMongoRepository<TDocument> where TDocument : IEntity
     {
         IQueryable<TDocument> AsQueryable();
 
@@ -89,7 +92,7 @@ namespace Paybook.Cycle.Core
 
         Task DeleteManyAsync(Expression<Func<TDocument, bool>> filterExpression);
     }
-    
+
     public class MongoRepository<TDocument> : IMongoRepository<TDocument>
     where TDocument : IEntity
     {
@@ -102,7 +105,7 @@ namespace Paybook.Cycle.Core
             _collection = Context.GetCollection<TDocument>(GetCollectionName(typeof(TDocument)));
         }
 
-        private protected string GetCollectionName(Type documentType)
+        protected string GetCollectionName(Type documentType)
         {
             return ((BsonCollectionAttribute)documentType.GetCustomAttributes(
                     typeof(BsonCollectionAttribute),
@@ -155,7 +158,6 @@ namespace Paybook.Cycle.Core
             });
         }
 
-
         public virtual void InsertOne(TDocument document)
         {
             _collection.InsertOne(document);
@@ -170,7 +172,6 @@ namespace Paybook.Cycle.Core
         {
             _collection.InsertMany(documents);
         }
-
 
         public virtual async Task InsertManyAsync(ICollection<TDocument> documents)
         {
@@ -226,12 +227,16 @@ namespace Paybook.Cycle.Core
             return Task.Run(() => _collection.DeleteManyAsync(filterExpression));
         }
     }
+
     public interface IMongoContext : IDisposable
     {
         void AddCommand(Func<Task> func);
+
         Task<int> SaveChanges();
+
         IMongoCollection<T> GetCollection<T>(string name);
     }
+
     public class MongoContext : IMongoContext
     {
         private IMongoDatabase Database { get; set; }
@@ -293,10 +298,12 @@ namespace Paybook.Cycle.Core
             _commands.Add(func);
         }
     }
+
     public interface IUnitOfWork : IDisposable
     {
         Task<bool> Commit();
     }
+
     public class UnitOfWork : IUnitOfWork
     {
         private readonly IMongoContext _context;

@@ -19,7 +19,12 @@ namespace Paybook.Cycle.Tests
                         services
                         .AddSingleton<IMongoContext, MongoContext>()
                         .AddSingleton<IUnitOfWork, UnitOfWork>()
-                        .AddSingleton(typeof(IMongoRepository<>), typeof(MongoRepository<>));
+                        .AddSingleton(typeof(IMongoRepository<>), typeof(MongoRepository<>))
+                        .AddSingleton<ICommand, PagamentoCommand>()
+                        .AddSingleton<IEvent, PagamentoCriadoEvent>()
+                        .AddSingleton<IHandler<PagamentoCommand>, PagamentoCommandHandler>()
+                        .AddSingleton<IProducer<PagamentoCriadoEvent>, PagamentoCriadoProducer>()
+                        .AddSingleton<IConsumer<PagamentoCriadoEvent>, PagamentoCriadoConsumer>();
                         //service.AddTransient<IPagamentoRepository, PagamentoRepository>();
                     });
         }
@@ -28,10 +33,11 @@ namespace Paybook.Cycle.Tests
     [Collection(nameof(IntegrationApiTestFixtureCollection))]
     public class IntegrationTests : IntegrationTest
     {
-        private readonly IMongoRepository<Pagamento> _caixa;
+        //private readonly IMongoRepository<Pagamento> _caixa;
+
         public IntegrationTests(IntegrationTestFixture<Program> integrationTestFixture) : base(integrationTestFixture)
         {
-            _caixa = ApiFixture.Factory.Services.GetRequiredService<IMongoRepository<Pagamento>>();
+            //_caixa = ApiFixture.Factory.Services.GetRequiredService<IMongoRepository<Pagamento>>();
         }
 
         [Fact]
@@ -73,13 +79,23 @@ namespace Paybook.Cycle.Tests
             Assert.Equal(pagamentoEsperado.Id, resultadoCedulas!.Id);
             Assert.Equal(pagamentoEsperado.FirstName, resultadoCedulas!.FirstName);
         }
-    }
 
+        [Fact]
+        public async Task Teste_de_PubSub()
+        {
+            PagamentoCriadoEvent pagamentoEsperado = new PagamentoCriadoEvent() { FirstName = "Paga" };
+            var producer = await KafkaFixture.Producer.Send(pagamentoEsperado, CancellationToken.None);
+            Assert.True(producer.IsSuccess);
+            await KafkaFixture.Consumer.Consume(CancellationToken.None);
+            //var resultadoCedulas = await RepositoryFixture.Repository.FindByIdAsync(pagamentoEsperado.Id.ToString());
+            //Assert.Equal(pagamentoEsperado.Id, resultadoCedulas!.Id);
+            //Assert.Equal(pagamentoEsperado.FirstName, resultadoCedulas!.FirstName);
+        }
+    }
 
     [CollectionDefinition(nameof(IntegrationApiTestFixtureCollection))]
     public class IntegrationApiTestFixtureCollection : ICollectionFixture<IntegrationTestFixture<Program>>
     {
-
     }
 
     public class IntegrationTestFixture<TStartup> : IDisposable where TStartup : class
@@ -111,9 +127,22 @@ namespace Paybook.Cycle.Tests
     public class RepositoryFixture
     {
         public IMongoRepository<Pagamento> Repository { get; set; }
+
         public RepositoryFixture(IntegrationTestsApiFactory<Program> factory)
         {
             Repository = factory.Services.GetRequiredService<IMongoRepository<Pagamento>>();
+        }
+    }
+
+    public class KafkaFixture
+    {
+        public IProducer<PagamentoCriadoEvent> Producer { get; set; }
+        public IConsumer<PagamentoCriadoEvent> Consumer { get; set; }
+
+        public KafkaFixture(IntegrationTestsApiFactory<Program> factory)
+        {
+            Producer = factory.Services.GetRequiredService<IProducer<PagamentoCriadoEvent>>();
+            Consumer = factory.Services.GetRequiredService<IConsumer<PagamentoCriadoEvent>>();
         }
     }
 
@@ -123,27 +152,14 @@ namespace Paybook.Cycle.Tests
     {
         public IntegrationTestFixture<Program> ApiFixture;
         public RepositoryFixture RepositoryFixture;
+        public KafkaFixture KafkaFixture;
+
         public IntegrationTest(IntegrationTestFixture<Program> integrationTestFixture)
         {
             ApiFixture = integrationTestFixture;
             RepositoryFixture = new RepositoryFixture(ApiFixture.Factory);
+            KafkaFixture = new KafkaFixture(ApiFixture.Factory);
         }
 
-        //[Fact]
-        //public async Task Test1()
-        //{
-        //    var response = await _integrationTestFixture.Client.GetAsync("/weatherForecast");
-        //    var result = await response.Content.ReadAsStringAsync();
-        //    Assert.True(!string.IsNullOrEmpty(result));
-        //}
-
-        //[Fact(DisplayName = "Efetua Saque via api")]
-        //public async Task Efetua_Saque_Via_Api()
-        //{
-        //    var response = await _integrationTestFixture.Client.PostAsJsonAsync($"/weatherForecast", new { });
-        //    response.EnsureSuccessStatusCode();
-        //    var result = await response.Content.ReadAsStringAsync();            
-        //    Assert.Contains("Receba seu saque", result);
-        //}
     }
 }
