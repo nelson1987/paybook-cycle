@@ -3,21 +3,20 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Paybook.Cycle.Core;
+using System.Net;
 using System.Net.Http.Json;
+using Xunit.Categories;
 
 namespace Paybook.Cycle.Tests
 {
     public class IntegrationTestsApiFactory<TStartup> : WebApplicationFactory<TStartup> where TStartup : class
     {
-        public ServiceProvider ServiceProvider { get; private set; }
-
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            //builder.UseStartup<TStartup>();
             builder.UseEnvironment("Development")
-                    .ConfigureTestServices(service => {
+                    .ConfigureTestServices(service =>
+                    {
                         service.AddTransient<IPagamentoRepository, PagamentoRepository>();
-                        ServiceProvider = service.BuildServiceProvider();
                     });
         }
     }
@@ -28,11 +27,11 @@ namespace Paybook.Cycle.Tests
         private readonly IPagamentoRepository _caixa;
         public IntegrationTests(IntegrationTestFixture<Program> integrationTestFixture) : base(integrationTestFixture)
         {
-            _caixa = ApiFixture.Factory.ServiceProvider.GetRequiredService<IPagamentoRepository>();
+            _caixa = ApiFixture.Factory.Services.GetRequiredService<IPagamentoRepository>();
         }
 
         [Fact]
-        public async Task Test1()
+        public async Task Realiza_Get_Com_Sucesso()
         {
             var response = await ApiFixture.Client.GetAsync("/weatherForecast");
             response.EnsureSuccessStatusCode();
@@ -40,37 +39,36 @@ namespace Paybook.Cycle.Tests
             Assert.True(!string.IsNullOrEmpty(result));
         }
 
-        [Fact]
-        public void SaqueContemMenorNumeroDeCedulas()
-        {
-            Pagamento pagamentoEsperado = new Pagamento() { Id = 1, FirstName = "Paga" };
-            var resultadoCedulas = RepositoryFixture.Repository.GetById(pagamentoEsperado.Id);
-            Assert.Equal(pagamentoEsperado.Id, resultadoCedulas.Id);
-            Assert.Equal(pagamentoEsperado.FirstName, resultadoCedulas.FirstName);
-        }
-
         [Fact(DisplayName = "Efetua Saque via api")]
-        public async Task Efetua_Saque_Via_Api()
+        public async Task Realiza_Post_Com_Sucesso()
         {
-            var response = await ApiFixture.Client.PostAsJsonAsync($"/weatherForecast", new { });
+            Pagamento pagamentoEsperado = new Pagamento() { Id = Guid.NewGuid(), FirstName = "Paga" };
+            var response = await ApiFixture.Client.PostAsJsonAsync($"/weatherForecast", pagamentoEsperado);
             response.EnsureSuccessStatusCode();
             var result = await response.Content.ReadAsStringAsync();
             Assert.Contains("Receba seu saque", result);
         }
 
-        //[Theory(DisplayName = "NÃO Efetua Saque via api")]
-        //[InlineData(5)]
-        //[InlineData(15)]
-        //[InlineData(38)]
-        //public async Task Nao_Efetua_Saque_Via_Api(int valorSaque)
-        //{
-        //    var requisicao = await _integrationTestFixture.Client.PostAsJsonAsync($"/api/CaixaEletronico/saque/{valorSaque}", new { });
-        //    var resposta = await requisicao.Content.ReadAsStringAsync();
+        [Fact(DisplayName = "NÃO Efetua Saque via api")]
+        public async Task Nao_Efetua_Saque_Via_Api()
+        {
+            var response = await ApiFixture.Client.PostAsJsonAsync($"/weatherForecast", new { });
+            var resposta = await response.Content.ReadAsStringAsync();
 
-        //    Assert.False(requisicao.IsSuccessStatusCode);
-        //    Assert.Contains("Valor não válido para saque", resposta);
-        //    Assert.Equal(HttpStatusCode.BadRequest, requisicao.StatusCode);
-        //}
+            Assert.False(response.IsSuccessStatusCode);
+            //Assert.Contains("Valor não válido para saque", resposta);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task Teste_de_Repository()
+        {
+            Pagamento pagamentoEsperado = new Pagamento() { Id = Guid.NewGuid(), FirstName = "Paga" };
+            await RepositoryFixture.Repository.CreateAsync(pagamentoEsperado);
+            var resultadoCedulas = await RepositoryFixture.Repository.GetAsync(pagamentoEsperado.Id);
+            Assert.Equal(pagamentoEsperado.Id, resultadoCedulas!.Id);
+            Assert.Equal(pagamentoEsperado.FirstName, resultadoCedulas!.FirstName);
+        }
     }
 
 
@@ -79,7 +77,7 @@ namespace Paybook.Cycle.Tests
     {
 
     }
-    
+
     public class IntegrationTestFixture<TStartup> : IDisposable where TStartup : class
     {
         public readonly IntegrationTestsApiFactory<TStartup> Factory;
@@ -106,17 +104,18 @@ namespace Paybook.Cycle.Tests
         }
     }
 
-    public class RepositoryFixture 
-    { 
+    public class RepositoryFixture
+    {
         public IPagamentoRepository Repository { get; set; }
         public RepositoryFixture(IntegrationTestsApiFactory<Program> factory)
         {
-            Repository = factory.ServiceProvider.GetRequiredService<IPagamentoRepository>();
+            Repository = factory.Services.GetRequiredService<IPagamentoRepository>();
         }
     }
 
     [Collection(nameof(IntegrationApiTestFixtureCollection))]
-    public class IntegrationTest
+    [IntegrationTest]
+    public partial class IntegrationTest
     {
         public IntegrationTestFixture<Program> ApiFixture;
         public RepositoryFixture RepositoryFixture;

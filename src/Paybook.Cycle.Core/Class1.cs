@@ -1,4 +1,7 @@
-﻿namespace Paybook.Cycle.Core
+﻿using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Driver;
+
+namespace Paybook.Cycle.Core
 {
     public class WeatherForecast
     {
@@ -13,20 +16,40 @@
 
     public class Pagamento
     {
-        public int Id { get; set; }
+        [BsonId]
+        public Guid Id { get; set; }
         public string FirstName { get; set; }
     }
 
     public interface IPagamentoRepository
     {
-        Pagamento GetById(int idPagamento);
+        Task<Pagamento?> GetAsync(Guid id, CancellationToken cancellationToken = default);
+        Task CreateAsync(Pagamento newBook, CancellationToken cancellationToken = default);
     }
 
     public class PagamentoRepository : IPagamentoRepository
     {
-        public Pagamento GetById(int idPagamento)
+        private readonly IMongoCollection<Pagamento> _booksCollection;
+        public PagamentoRepository()
         {
-            return new Pagamento() { Id = 1, FirstName = "Paga" };
+            var mongoClient = new MongoClient("mongodb://root:example@localhost:27017/");
+            var mongoDatabase = mongoClient.GetDatabase("sales");
+            _booksCollection = mongoDatabase.GetCollection<Pagamento>(nameof(Pagamento));
         }
+
+        public async Task<List<Pagamento>> GetAsync(CancellationToken cancellationToken = default) =>
+            await _booksCollection.Find(_ => true).ToListAsync(cancellationToken);
+
+        public async Task<Pagamento?> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
+            await _booksCollection.Find(x => x.Id == id).FirstOrDefaultAsync(cancellationToken);
+
+        public async Task CreateAsync(Pagamento newBook, CancellationToken cancellationToken = default) =>
+            await _booksCollection.InsertOneAsync(newBook, cancellationToken);
+
+        public async Task UpdateAsync(Guid id, Pagamento updatedBook, CancellationToken cancellationToken = default) =>
+            await _booksCollection.ReplaceOneAsync(x => x.Id == id, updatedBook);
+
+        public async Task RemoveAsync(Guid id, CancellationToken cancellationToken = default) =>
+            await _booksCollection.DeleteOneAsync(x => x.Id == id, cancellationToken);
     }
 }
