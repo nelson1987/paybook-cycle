@@ -30,5 +30,11 @@ namespace Paybook.Cycle.Api.Controllers
             })
             .ToArray();
         }
+
+        [HttpPost(Name = "PostWeatherForecast")]
+        public string Post()
+        {
+            return "Receba seu saque";
+        }
     }
 }

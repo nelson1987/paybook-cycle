@@ -15,13 +15,18 @@
     {
         public int Id { get; set; }
         public string FirstName { get; set; }
-        public string LastName { get; set; }
-        public string Address { get; set; }
     }
 
     public interface IPagamentoRepository
-    { }
+    {
+        Pagamento GetById(int idPagamento);
+    }
 
     public class PagamentoRepository : IPagamentoRepository
-    { }
+    {
+        public Pagamento GetById(int idPagamento)
+        {
+            return new Pagamento() { Id = 1, FirstName = "Paga" };
+        }
+    }
 }
