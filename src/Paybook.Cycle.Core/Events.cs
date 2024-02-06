@@ -1,7 +1,7 @@
 ﻿using Confluent.Kafka;
 using FluentResults;
-using Microsoft.Extensions.Logging;
-using static MongoDB.Driver.WriteConcern;
+using Newtonsoft.Json;
+using static Confluent.Kafka.ConfigPropertyNames;
 
 namespace Paybook.Cycle.Core
 {
@@ -46,39 +46,67 @@ namespace Paybook.Cycle.Core
 
         public async Task<Result> Handle(PagamentoCommand command, CancellationToken cancellationToken)
         {
-            await _producer.Send(new PagamentoCriadoEvent(), cancellationToken);
+            await _producer.Send(new PagamentoCriadoEvent() { Id = "Id", FirstName = "FirstName" }, cancellationToken);
             return Result.Ok();
         }
     }
     public interface IProducer<TEvent> where TEvent : IEvent
     {
         Task<Result> Send(TEvent @event, CancellationToken cancellationToken);
+        Task<Result> Flush(CancellationToken cancellationToken);
     }
 
-    public class PagamentoCriadoProducer : IProducer<PagamentoCriadoEvent>
+    public class PagamentoCriadoProducer : IProducer<PagamentoCriadoEvent>, IDisposable
     {
-        public async Task<Result> Send(PagamentoCriadoEvent @event, CancellationToken cancellationToken)
+        private readonly IProducer<int, string> _kafkaProducer;
+
+        public PagamentoCriadoProducer()
         {
             var config = new ProducerConfig
             {
                 BootstrapServers = "localhost:9092"
             };
-            using var producer = new ProducerBuilder<Null, string>(config).Build();
+            _kafkaProducer = new ProducerBuilder<int, string>(config).Build();
+        }
 
+        public async Task<Result> Send(PagamentoCriadoEvent @event, CancellationToken cancellationToken)
+        {
             var topic = "test-topic";
-            var message = MensagemProducerFactory.Create(@event);
-            var produzido = await producer.ProduceAsync(topic, message, cancellationToken);
+            //var message = MensagemProducerFactory.Create(@event);
+            var message = new Message<int, string>() { Key = 1, Value = JsonConvert.SerializeObject(@event) };
+            var produzido = await _kafkaProducer.ProduceAsync(topic, message, cancellationToken);
 
             return produzido.Status == PersistenceStatus.Persisted ? Result.Ok() : Result.Fail($"Cant Produce the Message: {message}");
+        }
+
+        public Task<Result> Flush(CancellationToken cancellationToken)
+        {
+            var config = new ProducerConfig
+            {
+                BootstrapServers = "localhost:9092",
+                Acks = Acks.All
+            };
+            using var producer = new ProducerBuilder<int, string>(config).Build();
+            producer.Flush(cancellationToken);
+
+            return Task.FromResult(Result.Ok());
+        }
+
+        public void Dispose()
+        {
+            _kafkaProducer?.Flush();
+            _kafkaProducer?.Dispose();
         }
     }
     public interface IConsumer<TEvent> where TEvent : IEvent
     {
         Task<TEvent> Consume(CancellationToken cancellationToken);
     }
-    public class PagamentoCriadoConsumer : IConsumer<PagamentoCriadoEvent>
+    public class PagamentoCriadoConsumer : IConsumer<PagamentoCriadoEvent>, IDisposable
     {
-        public Task<PagamentoCriadoEvent> Consume(CancellationToken cancellationToken)
+        private readonly IConsumer<int, string> _kafkaConsumer;
+
+        public PagamentoCriadoConsumer()
         {
             var config = new ConsumerConfig
             {
@@ -86,17 +114,22 @@ namespace Paybook.Cycle.Core
                 GroupId = "test-group",
                 AutoOffsetReset = AutoOffsetReset.Earliest
             };
-            using var consumer = new ConsumerBuilder<Ignore, string>(config).Build();
-            consumer.Subscribe("test-topic");
+            _kafkaConsumer = new ConsumerBuilder<int, string>(config).Build();
+        }
+
+        public Task<PagamentoCriadoEvent> Consume(CancellationToken cancellationToken)
+        {
+            _kafkaConsumer.Subscribe("test-topic");
             try
             {
                 while (true)
                 {
-                    var message = consumer.Consume();
-                    Console.WriteLine($"Received message: {message.Value}");
-                    break;
+                    var @event = _kafkaConsumer.Consume();
+                    if (@event != null)
+                    {
+                        return Task.FromResult(JsonConvert.DeserializeObject<PagamentoCriadoEvent>(@event.Message.Value)!);
+                    }
                 }
-                return Task.FromResult(new PagamentoCriadoEvent() { Id = "", FirstName = "" });
             }
             catch (Exception ex)
             {
@@ -104,18 +137,32 @@ namespace Paybook.Cycle.Core
                 throw ex;
             }
         }
+
+        public void Dispose()
+        {
+            _kafkaConsumer?.Dispose();
+        }
     }
 
     public static class MensagemProducerFactory
     {
-        public static Message<Null, string> Create(IEvent @event)
+        public static Message<int, string> Create(IEvent @event)
         {
-            return new Message<Null, string> { Value = System.Text.Json.JsonSerializer.Serialize(new MensagemProducer() { Value = @event }) };
+            var mensagem = JsonConvert.SerializeObject(new MensagemProducer(@event));
+            return new Message<int, string>
+            {
+                Key = 1,
+                Value = mensagem
+            };
         }
     }
     public record MensagemProducer
     {
-        public required IEvent Value { get; init; }
+        public MensagemProducer(IEvent @event)
+        {
+            Event = @event;
+        }
+        public IEvent Event { get; set; }
         public Guid Key { get { return Guid.NewGuid(); } }
     }
 }
