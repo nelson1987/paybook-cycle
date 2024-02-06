@@ -93,12 +93,13 @@ namespace Paybook.Cycle.Core
     public class MongoRepository<TDocument> : IMongoRepository<TDocument>
     where TDocument : IEntity
     {
+        protected readonly IMongoContext Context;
         private readonly IMongoCollection<TDocument> _collection;
 
-        public MongoRepository()
+        public MongoRepository(IMongoContext context)
         {
-            var database = new MongoClient("mongodb://root:example@localhost:27017/").GetDatabase("sales");
-            _collection = database.GetCollection<TDocument>(GetCollectionName(typeof(TDocument)));
+            Context = context;
+            _collection = Context.GetCollection<TDocument>(GetCollectionName(typeof(TDocument)));
         }
 
         private protected string GetCollectionName(Type documentType)
@@ -225,36 +226,96 @@ namespace Paybook.Cycle.Core
             return Task.Run(() => _collection.DeleteManyAsync(filterExpression));
         }
     }
-    /*
-    public interface IPagamentoRepository
+    public interface IMongoContext : IDisposable
     {
-        Task<Pagamento?> GetAsync(Guid id, CancellationToken cancellationToken = default);
-        Task CreateAsync(Pagamento newBook, CancellationToken cancellationToken = default);
+        void AddCommand(Func<Task> func);
+        Task<int> SaveChanges();
+        IMongoCollection<T> GetCollection<T>(string name);
     }
-    public class PagamentoRepository : IPagamentoRepository
+    public class MongoContext : IMongoContext
     {
-        private readonly IMongoCollection<Pagamento> _booksCollection;
-        public PagamentoRepository()
+        private IMongoDatabase Database { get; set; }
+        public IClientSessionHandle Session { get; set; }
+        public MongoClient MongoClient { get; set; }
+        private readonly List<Func<Task>> _commands;
+
+        public MongoContext()
         {
-            var mongoClient = new MongoClient("mongodb://root:example@localhost:27017/");
-            var mongoDatabase = mongoClient.GetDatabase("sales");
-            _booksCollection = mongoDatabase.GetCollection<Pagamento>(nameof(Pagamento));
+            // Every command will be stored and it'll be processed at SaveChanges
+            _commands = new List<Func<Task>>();
         }
 
-        public async Task<List<Pagamento>> GetAsync(CancellationToken cancellationToken = default) =>
-            await _booksCollection.Find(_ => true).ToListAsync(cancellationToken);
+        public async Task<int> SaveChanges()
+        {
+            ConfigureMongo();
 
-        public async Task<Pagamento?> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
-            await _booksCollection.Find(x => x.Id == id).FirstOrDefaultAsync(cancellationToken);
+            using (Session = await MongoClient.StartSessionAsync())
+            {
+                Session.StartTransaction();
 
-        public async Task CreateAsync(Pagamento newBook, CancellationToken cancellationToken = default) =>
-            await _booksCollection.InsertOneAsync(newBook, cancellationToken);
+                var commandTasks = _commands.Select(c => c());
 
-        public async Task UpdateAsync(Guid id, Pagamento updatedBook, CancellationToken cancellationToken = default) =>
-            await _booksCollection.ReplaceOneAsync(x => x.Id == id, updatedBook);
+                await Task.WhenAll(commandTasks);
 
-        public async Task RemoveAsync(Guid id, CancellationToken cancellationToken = default) =>
-            await _booksCollection.DeleteOneAsync(x => x.Id == id, cancellationToken);
+                await Session.CommitTransactionAsync();
+            }
+
+            return _commands.Count;
+        }
+
+        private void ConfigureMongo()
+        {
+            if (MongoClient != null)
+            {
+                return;
+            }
+
+            MongoClient = new MongoClient("mongodb://root:example@localhost:27017/");
+
+            Database = MongoClient.GetDatabase("sales");
+        }
+
+        public IMongoCollection<T> GetCollection<T>(string name)
+        {
+            ConfigureMongo();
+
+            return Database.GetCollection<T>(name);
+        }
+
+        public void Dispose()
+        {
+            Session?.Dispose();
+            GC.SuppressFinalize(this);
+        }
+
+        public void AddCommand(Func<Task> func)
+        {
+            _commands.Add(func);
+        }
     }
-    */
+    public interface IUnitOfWork : IDisposable
+    {
+        Task<bool> Commit();
+    }
+    public class UnitOfWork : IUnitOfWork
+    {
+        private readonly IMongoContext _context;
+
+        public UnitOfWork(IMongoContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<bool> Commit()
+        {
+            var changeAmount = await _context.SaveChanges();
+
+            return changeAmount > 0;
+        }
+
+        public void Dispose()
+        {
+            _context.Dispose();
+        }
+    }
 }

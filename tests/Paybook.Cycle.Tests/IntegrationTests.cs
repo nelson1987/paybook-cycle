@@ -16,7 +16,10 @@ namespace Paybook.Cycle.Tests
             builder.UseEnvironment("Development")
                     .ConfigureTestServices(services =>
                     {
-                        services.AddSingleton(typeof(IMongoRepository<>), typeof(MongoRepository<>));
+                        services
+                        .AddSingleton<IMongoContext, MongoContext>()
+                        .AddSingleton<IUnitOfWork, UnitOfWork>()
+                        .AddSingleton(typeof(IMongoRepository<>), typeof(MongoRepository<>));
                         //service.AddTransient<IPagamentoRepository, PagamentoRepository>();
                     });
         }
