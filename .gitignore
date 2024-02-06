@@ -475,3 +475,4 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+/tests/Paybook.Cycle.Tests/.db/mongo1
