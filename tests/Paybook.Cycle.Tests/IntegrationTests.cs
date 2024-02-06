@@ -14,9 +14,10 @@ namespace Paybook.Cycle.Tests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development")
-                    .ConfigureTestServices(service =>
+                    .ConfigureTestServices(services =>
                     {
-                        service.AddTransient<IPagamentoRepository, PagamentoRepository>();
+                        services.AddSingleton(typeof(IMongoRepository<>), typeof(MongoRepository<>));
+                        //service.AddTransient<IPagamentoRepository, PagamentoRepository>();
                     });
         }
     }
@@ -24,10 +25,10 @@ namespace Paybook.Cycle.Tests
     [Collection(nameof(IntegrationApiTestFixtureCollection))]
     public class IntegrationTests : IntegrationTest
     {
-        private readonly IPagamentoRepository _caixa;
+        private readonly IMongoRepository<Pagamento> _caixa;
         public IntegrationTests(IntegrationTestFixture<Program> integrationTestFixture) : base(integrationTestFixture)
         {
-            _caixa = ApiFixture.Factory.Services.GetRequiredService<IPagamentoRepository>();
+            _caixa = ApiFixture.Factory.Services.GetRequiredService<IMongoRepository<Pagamento>>();
         }
 
         [Fact]
@@ -42,7 +43,7 @@ namespace Paybook.Cycle.Tests
         [Fact(DisplayName = "Efetua Saque via api")]
         public async Task Realiza_Post_Com_Sucesso()
         {
-            Pagamento pagamentoEsperado = new Pagamento() { Id = Guid.NewGuid(), FirstName = "Paga" };
+            Pagamento pagamentoEsperado = new Pagamento() { FirstName = "Paga" };
             var response = await ApiFixture.Client.PostAsJsonAsync($"/weatherForecast", pagamentoEsperado);
             response.EnsureSuccessStatusCode();
             var result = await response.Content.ReadAsStringAsync();
@@ -53,7 +54,7 @@ namespace Paybook.Cycle.Tests
         public async Task Nao_Efetua_Saque_Via_Api()
         {
             var response = await ApiFixture.Client.PostAsJsonAsync($"/weatherForecast", new { });
-            var resposta = await response.Content.ReadAsStringAsync();
+            //var resposta = await response.Content.ReadAsStringAsync();
 
             Assert.False(response.IsSuccessStatusCode);
             //Assert.Contains("Valor não válido para saque", resposta);
@@ -63,9 +64,9 @@ namespace Paybook.Cycle.Tests
         [Fact]
         public async Task Teste_de_Repository()
         {
-            Pagamento pagamentoEsperado = new Pagamento() { Id = Guid.NewGuid(), FirstName = "Paga" };
-            await RepositoryFixture.Repository.CreateAsync(pagamentoEsperado);
-            var resultadoCedulas = await RepositoryFixture.Repository.GetAsync(pagamentoEsperado.Id);
+            Pagamento pagamentoEsperado = new Pagamento() { FirstName = "Paga" };
+            await RepositoryFixture.Repository.InsertOneAsync(pagamentoEsperado);
+            var resultadoCedulas = await RepositoryFixture.Repository.FindByIdAsync(pagamentoEsperado.Id.ToString());
             Assert.Equal(pagamentoEsperado.Id, resultadoCedulas!.Id);
             Assert.Equal(pagamentoEsperado.FirstName, resultadoCedulas!.FirstName);
         }
@@ -106,10 +107,10 @@ namespace Paybook.Cycle.Tests
 
     public class RepositoryFixture
     {
-        public IPagamentoRepository Repository { get; set; }
+        public IMongoRepository<Pagamento> Repository { get; set; }
         public RepositoryFixture(IntegrationTestsApiFactory<Program> factory)
         {
-            Repository = factory.Services.GetRequiredService<IPagamentoRepository>();
+            Repository = factory.Services.GetRequiredService<IMongoRepository<Pagamento>>();
         }
     }
 

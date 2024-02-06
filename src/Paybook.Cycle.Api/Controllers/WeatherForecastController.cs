@@ -13,9 +13,9 @@ namespace Paybook.Cycle.Api.Controllers
     };
 
         private readonly ILogger<WeatherForecastController> _logger;
-        private readonly IPagamentoRepository _repository;
+        private readonly IMongoRepository<Pagamento> _repository;
 
-        public WeatherForecastController(ILogger<WeatherForecastController> logger, IPagamentoRepository repository)
+        public WeatherForecastController(ILogger<WeatherForecastController> logger, IMongoRepository<Pagamento> repository)
         {
             _logger = logger;
             _repository = repository;
@@ -36,7 +36,7 @@ namespace Paybook.Cycle.Api.Controllers
         [HttpPost(Name = "PostWeatherForecast")]
         public async Task<string> Post(Pagamento pagamento, CancellationToken cancellationToken)
         {
-            await _repository.CreateAsync(pagamento, cancellationToken);
+            await _repository.InsertOneAsync(pagamento);
             return "Receba seu saque";
         }
     }
